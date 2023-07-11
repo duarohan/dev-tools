@@ -1,0 +1,32 @@
+#!/bin/bash
+# Script to start a list of services, either from command line or from default set.
+
+services=$@
+if [[ -z "${services}" ]]; then
+  services=(admin-service catalog-service order-service client-account-service content-service legacy-service batch-processing-service game-data-service auth-provider-simulator dynamodb-service)
+  # Workaround for legacy-service that requires sudo.  Do here so service start will work.
+  sudo echo "Services not specified, using default list: ${services}"
+else
+  echo "Services to start: ${services}"
+fi
+
+set -e
+
+if [[ ! -d "/opt/squarepanda" ]]; then
+  sudo mkdir -p /opt/squarepanda/
+  sudo chown ubuntu.ubuntu /opt/squarepanda
+fi
+
+cd ~
+for service in ${services[@]}; do
+  cd ${service}
+  echo "Starting service ${service}"
+  lifecycle_scripts=(stop init migrate start)
+  for script in ${lifecycle_scripts[@]}; do
+    if [[ -f "./lifecycle/${script}" ]]; then
+      echo "Running ./lifecycle/${script} for ${service}"
+      ./lifecycle/${script}
+    fi
+  done
+  cd ..
+done

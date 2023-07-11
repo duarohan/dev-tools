@@ -1,0 +1,117 @@
+#!/bin/bash
+# Script that syncs library to an application on a target VM.  First, update your local
+# copy of the library repo (get latest services-lib, or make local changes to lib repo, 
+# for example).  Then use this script to update a service to use udpated version of library.
+# Example usage: 
+# $ ./tools/lib_sync -l services-lib -s order-service -t ubuntu@<developer-vm>
+
+
+# Globals
+readonly RSYNC_OPTIONS="--exclude=.git --exclude=.gitignore --exclude=logs --exclude=node_modules -avh --delete --exclude=lifecycle --exclude=.eslintrc.json --exclude=*.yml"
+readonly INSTALL_PATH='/home/ubuntu'
+service_to_update=''
+target_host=''
+library=''
+
+# Fail fast if something goes wrong
+set -e
+
+# Prints information about expected usage.
+# Globals:
+#   None
+# Arguments:
+#   None
+# Returns:
+#   None
+function print_usage {
+  echo 'Usage: lib_sync -l <library> -t <IP or host> -s <service>'
+  echo '  -l: Library to update in a service.'
+  echo '  -s <service>: Service to install library to.'
+  echo '  -t <IP or host>: IP or host of target machine to deploy to.'
+  echo '  -h: Prints this message.'
+}
+
+# Processes command line arguments and sets global values accordingly.  May exit if invalid options provided.
+# Globals:
+#   service_to_update
+#   target_host
+#   library
+# Arguments:
+#   Expected to be called with command line arguments provided to this utility.
+# Returns:
+#   None
+function process_arguments {
+  while getopts "hs:t:l:" opt; do
+    case ${opt} in
+      s)
+        service_to_update=$OPTARG
+        ;;
+      t)
+        target_host=$OPTARG
+        ;;
+      l)
+        library=$OPTARG
+        ;;
+      h)
+        print_usage
+        exit 0
+        ;;
+      \?)
+        echo "Invalid option: $OPTARG"
+        print_usage
+        exit 1
+        ;;
+    esac
+  done
+
+  readonly service_to_update
+  readonly target_host
+  readonly library
+}
+
+# Validates command line arguments.  May exit if invalid arguments provided.
+# Globals:
+#   service_to_update
+#   target_host
+#   library
+# Arguments:
+#   None
+# Returns:
+#   None
+function validate_arguments {
+  # Service required
+  if [[ -z "${service_to_update}" ]]; then
+    echo "ERROR: service to install not provided."
+    print_usage
+    exit 1
+  fi
+
+  # Target host required
+  if [[ -z "${target_host}" ]]; then
+    echo "ERROR: host to update not specified."
+    print_usage
+    exit 1
+  fi
+
+  # Library required
+  if [[ -z "${library}" ]]; then
+    echo "ERROR: library not specified."
+    print_usage
+    exit 1
+  fi
+}
+
+function main {
+  process_arguments "$@"
+  validate_arguments
+
+  local original_dir
+  original_dir=$(pwd)
+
+  cd ..
+  echo "Copying ${library} to ${target_host}:${INSTALL_PATH}/${service_to_update}"
+  echo rsync ${dry_run} ${RSYNC_OPTIONS} node-${library} ${target_host}:${INSTALL_PATH}/${service_to_update}/node_modules/${library}
+  rsync ${dry_run} ${RSYNC_OPTIONS} node-${library}/ ${target_host}:${INSTALL_PATH}/${service_to_update}/node_modules/${library}
+}
+
+main "$@"

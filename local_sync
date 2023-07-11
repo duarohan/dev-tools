@@ -1,0 +1,148 @@
+#!/bin/bash
+# Script that syncs an application to a target VM.
+# Example usage: 
+# * Sync service over to VM
+#   $ ./tools/local_sync -s stream-processing-service -t ubuntu@10.1.1.200
+# * Sync service over to VM, followed by build deploy and test (using lifecycle scripts)
+#   $ ./tools/local_sync -s client-account-service -t ubuntu@10.1.1.200 -b -d -e
+
+
+# Globals
+readonly RSYNC_OPTIONS="--exclude=.git --exclude=.gitignore --exclude=logs --exclude=node_modules --exclude=__pycache__ -avh --delete"
+readonly INSTALL_PATH='/home/ubuntu'
+service_to_update=''
+target_host=''
+dry_run=''
+build_service=false
+deploy_service=false
+test_service=false
+
+# Fail fast if something goes wrong
+set -e
+
+# Prints information about expected usage.
+# Globals:
+#   None
+# Arguments:
+#   None
+# Returns:
+#   None
+function print_usage {
+  echo 'Usage: local_sync -s <service> -t <IP or host> -n -b -d -e'
+  echo '  -s <service>: Service to install.'
+  echo '  -t <IP or host>: IP or host of target machine to deploy to.'
+  echo '  -n: Flag to indicate try run of transfer.'
+  echo '  -b: Build target service.'
+  echo '  -d: Redeploy target service.'
+  echo '  -e: Execute system tests for target service.'
+  echo '  -h: Prints this message.'
+}
+
+# Processes command line arguments and sets global values accordingly.  May exit if invalid options provided.
+# Globals:
+#   service_to_update
+#   target_host
+#   dry_run
+# Arguments:
+#   Expected to be called with command line arguments provided to this utility.
+# Returns:
+#   None
+function process_arguments {
+  while getopts "hs:t:ncbde" opt; do
+    case ${opt} in
+      s)
+        service_to_update=$OPTARG
+        ;;
+      t)
+        target_host=$OPTARG
+        ;;
+      n)
+        dry_run='-n'
+        ;;
+      b)
+        build_service=true
+        ;;
+      d)
+        deploy_service=true
+        ;;
+      e)
+        test_service=true
+        ;;
+      h)
+        print_usage
+        exit 0
+        ;;
+      \?)
+        echo "Invalid option: $OPTARG"
+        print_usage
+        exit 1
+        ;;
+    esac
+  done
+
+  readonly service_to_update
+  readonly target_host
+  readonly dry_run
+}
+
+# Validates command line arguments.  May exit if invalid arguments provided.
+# Globals:
+#   service_to_update
+#   target_host
+# Arguments:
+#   None
+# Returns:
+#   None
+function validate_arguments {
+  # Service required
+  if [[ -z "${service_to_update}" ]]; then
+    echo "ERROR: service to install not provided."
+    print_usage
+    exit 1
+  fi
+
+  # Target host required
+  if [[ -z "${target_host}" ]]; then
+    echo "ERROR: host to update not specified."
+    print_usage
+    exit 1
+  fi
+}
+
+function main {
+  process_arguments "$@"
+  validate_arguments
+
+  local original_dir
+  original_dir=$(pwd)
+
+  cd ..
+  echo "Copying ${service_to_update} to ${target_host}:${INSTALL_PATH}"
+  ssh ${target_host} "mkdir -p ${INSTALL_PATH}/${service_to_update}"
+  echo rsync ${dry_run} ${RSYNC_OPTIONS} ${service_to_update} ${target_host}:${INSTALL_PATH}
+  rsync ${dry_run} ${RSYNC_OPTIONS} ${service_to_update} ${target_host}:${INSTALL_PATH}
+
+  if [[ ! -z "${dry_run}" ]]; then
+    echo "Dry run - stopping after simulated file transfer"
+    exit
+  fi
+
+  if [[ "${build_service}" == "true" ]]; then
+    echo "Building service ${service_to_update}"
+    ssh ${target_host} "cd ${INSTALL_PATH}/${service_to_update}; ./lifecycle/build"
+  fi
+
+  if [[ "${deploy_service}" == "true" ]]; then
+    echo "Stopping service ${service_to_update}"
+    ssh ${target_host} "cd ${INSTALL_PATH}/${service_to_update}; ./lifecycle/stop"
+    echo "Starting service ${service_to_update}"
+    ssh ${target_host} "cd ${INSTALL_PATH}/${service_to_update}; ./lifecycle/start"
+  fi
+
+  if [[ "${test_service}" == "true" ]]; then
+    echo "Testing service ${service_to_update}"
+    ssh ${target_host} "cd ${INSTALL_PATH}/${service_to_update}; ./test/run_tests"
+  fi
+}
+
+main "$@"

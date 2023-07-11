@@ -1,0 +1,6 @@
+#!/bin/bash
+# Simple script to output expected use of sync tools.
+
+echo "Example tools usage:"
+echo "./tools/local_sync -s client-account-service -t ubuntu@asingh-dev -d"
+echo "./tools/lib_sync -l services-test -s client-account-service -t ubuntu@asingh-dev"
